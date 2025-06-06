@@ -32,7 +32,7 @@
     const statusEl = document.getElementById("mqtt-status");
 
     const topic = "esp32c3/led/blink";
-    const client = mqtt.connect("ws://mqtt.jjlabs.kr:9001");
+    const client = mqtt.connect("wss://mqtt.jjlabs.kr:9001");
 
     client.on("connect", () => {
       console.log("MQTT 연결 성공");
