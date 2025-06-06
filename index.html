@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>ESP32 LED 제어</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#007bff">
+
+  <!-- manifest를 JavaScript로 대체 -->
+  <script>
+    const manifest = {
+      name: "ESP32 LED Controller",
+      short_name: "LED Control",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: "#007bff",
+      icons: [
+        {
+          src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABt0lEQVRYR+2WwU3DQAxFz8ZQAxFAHNAHNEAc0QBzRAHNEDcUJQUnAJcElwCX0aKTzYpJz7KYv2cnKy5fncL8J9FSBuGPMssgBeRQDYZX8JmKyfUOxDeZ8vV8wn2XynNdN5iTbUwDsTY24BZ1AB91iUdxAzUwDnVKqNKReFZ6eUImGFN8Q3AfEom7QCnh2RpUV9YAQ7vZsqIRwArUdsz+pJHNdLU4MgiR4UgNe0thYqgW1qglo2OiyEQhu2QMQgXWqgVyd9KZtE+q0Gp7tWaowkJDIGZem2xVeTqblnqgggjAhmYRMQaUWdVQclB0BqQ8AsjtvWzFWW7yJx4UPuZ/Ac2VPZpZx7C+9QBM2uMAYEoQPltqE1k/CAOtv0vY/gvUFHVF8JY5W30VdsFqz2oCKKoNRjgaLz9iNoXFX1Vo41MgHQePqgDiSxyUAAAAASUVORK5CYII=",
+          sizes: "32x32",
+          type: "image/png"
+        }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    const manifestURL = URL.createObjectURL(blob);
+    document.write(`<link rel="manifest" href="${manifestURL}">`);
+  </script>
+
+  <!-- Service Worker 등록 -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      const swCode = `
+        self.addEventListener('install', e => self.skipWaiting());
+        self.addEventListener('activate', e => clients.claim());
+        self.addEventListener('fetch', e => {});
+      `;
+      const blob = new Blob([swCode], { type: 'application/javascript' });
+      const swURL = URL.createObjectURL(blob);
+      navigator.serviceWorker.register(swURL)
+        .then(reg => console.log('✅ Service Worker 등록 성공:', reg.scope))
+        .catch(err => console.error('❌ Service Worker 등록 실패:', err));
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 100px;
+    }
+    input[type="range"] {
+      width: 300px;
+    }
+    #status {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESP32 LED 깜빡임 주기 조절</h2>
+  <input type="range" id="slider" min="100" max="2000" value="500" step="100">
+  <div>주기: <span id="value">500</span> ms</div>
+  <div id="status">MQTT 연결 상태: <span id="mqtt-status">연결 시도 중...</span></div>
+
+  <!-- MQTT.js CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    const slider = document.getElementById("slider");
+    const value = document.getElementById("value");
+    const statusEl = document.getElementById("mqtt-status");
+
+    const topic = "esp32c3/led/blink";
+    const client = mqtt.connect("ws://mqtt.jjlabs.kr:9001");
+
+    client.on("connect", () => {
+      console.log("MQTT 연결 성공");
+      statusEl.textContent = "연결됨";
+      client.subscribe(topic);
+    });
+
+    client.on("message", (receivedTopic, payload) => {
+      if (receivedTopic === topic) {
+        const currentValue = payload.toString();
+        slider.value = currentValue;
+        value.textContent = currentValue;
+        console.log("초기 MQTT 값 수신:", currentValue);
+      }
+    });
+
+    client.on("error", (err) => {
+      console.error("MQTT 연결 실패", err);
+      statusEl.textContent = "연결 실패";
+    });
+
+    slider.oninput = () => {
+      const interval = slider.value;
+      value.textContent = interval;
+      client.publish(topic, interval, { retain: true }, (err) => {
+        if (err) {
+          console.error("MQTT 전송 실패:", err);
+          statusEl.textContent = "전송 실패";
+        } else {
+          console.log("MQTT 전송 성공:", interval);
+          statusEl.textContent = `전송됨: ${interval} ms`;
+        }
+      });
+    };
+  </script>
+</body>
+</html>
