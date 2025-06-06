@@ -3,47 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <title>ESP32 LED 제어</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#007bff">
-
-  <!-- manifest를 JavaScript로 대체 -->
-  <script>
-    const manifest = {
-      name: "ESP32 LED Controller",
-      short_name: "LED Control",
-      start_url: ".",
-      display: "standalone",
-      background_color: "#ffffff",
-      theme_color: "#007bff",
-      icons: [
-        {
-          src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABt0lEQVRYR+2WwU3DQAxFz8ZQAxFAHNAHNEAc0QBzRAHNEDcUJQUnAJcElwCX0aKTzYpJz7KYv2cnKy5fncL8J9FSBuGPMssgBeRQDYZX8JmKyfUOxDeZ8vV8wn2XynNdN5iTbUwDsTY24BZ1AB91iUdxAzUwDnVKqNKReFZ6eUImGFN8Q3AfEom7QCnh2RpUV9YAQ7vZsqIRwArUdsz+pJHNdLU4MgiR4UgNe0thYqgW1qglo2OiyEQhu2QMQgXWqgVyd9KZtE+q0Gp7tWaowkJDIGZem2xVeTqblnqgggjAhmYRMQaUWdVQclB0BqQ8AsjtvWzFWW7yJx4UPuZ/Ac2VPZpZx7C+9QBM2uMAYEoQPltqE1k/CAOtv0vY/gvUFHVF8JY5W30VdsFqz2oCKKoNRjgaLz9iNoXFX1Vo41MgHQePqgDiSxyUAAAAASUVORK5CYII=",
-          sizes: "32x32",
-          type: "image/png"
-        }
-      ]
-    };
-    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    const manifestURL = URL.createObjectURL(blob);
-    document.write(`<link rel="manifest" href="${manifestURL}">`);
-  </script>
-
-  <!-- Service Worker 등록 -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      const swCode = `
-        self.addEventListener('install', e => self.skipWaiting());
-        self.addEventListener('activate', e => clients.claim());
-        self.addEventListener('fetch', e => {});
-      `;
-      const blob = new Blob([swCode], { type: 'application/javascript' });
-      const swURL = URL.createObjectURL(blob);
-      navigator.serviceWorker.register(swURL)
-        .then(reg => console.log('✅ Service Worker 등록 성공:', reg.scope))
-        .catch(err => console.error('❌ Service Worker 등록 실패:', err));
-    }
-  </script>
-
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -78,6 +37,8 @@
     client.on("connect", () => {
       console.log("MQTT 연결 성공");
       statusEl.textContent = "연결됨";
+
+      // ✅ 슬라이더 값 동기화를 위해 현재 토픽 구독
       client.subscribe(topic);
     });
 
