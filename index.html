@@ -1,74 +1,238 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>ESP32 LED 제어</title>
+  <title>SF-XXXX 실시간 수분 뷰어</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin-top: 100px;
-    }
-    input[type="range"] {
-      width: 300px;
-    }
-    #status {
-      margin-top: 20px;
-      font-weight: bold;
-    }
+    body { font-family: Arial, sans-serif; padding: 30px; max-width: 800px; margin: auto; }
+    h1 { margin-bottom: 20px; }
+    #status { font-weight: bold; margin-bottom: 20px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: center; vertical-align: top; }
+    .online { color: green; font-weight: bold; }
+    .offline { color: red; font-weight: bold; }
+    .chart-cell { width: 200px; height: 100px; }
+    .time { font-size: 11px; color: #666; margin-top: 4px; }
+    #resetBtn { margin-top: 20px; padding: 6px 12px; font-size: 14px; }
   </style>
 </head>
 <body>
-  <h2>ESP32 LED 깜빡임 주기 조절</h2>
-  <input type="range" id="slider" min="100" max="2000" value="500" step="100">
-  <div>주기: <span id="value">500</span> ms</div>
-  <div id="status">MQTT 연결 상태: <span id="mqtt-status">연결 시도 중...</span></div>
+  <h1>SF-XXXX 실시간 수분 뷰어</h1>
+  <div id="status">MQTT 연결 중...</div>
+  <table>
+    <thead>
+      <tr>
+        <th>디바이스 ID</th>
+        <th>수분 (%)</th>
+        <th>24시간 그래프</th>
+        <th>1주일 그래프</th>
+        <th>상태</th>
+        <th>마지막 수신</th>
+      </tr>
+    </thead>
+    <tbody id="deviceTable"></tbody>
+  </table>
+  <button id="resetBtn" onclick="clearHistory()">기록 초기화</button>
 
-  <!-- MQTT.js CDN -->
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
-    const slider = document.getElementById("slider");
-    const value = document.getElementById("value");
-    const statusEl = document.getElementById("mqtt-status");
+    const statusEl = document.getElementById("status");
+    const deviceTable = document.getElementById("deviceTable");
+    const clientId = "viewer_" + Math.floor(Math.random() * 10000);
+    const charts = {};
+    const weekCharts = {};
+    const lastUpdateTime = {};
+    const statusMap = {};
+    let historyData = JSON.parse(localStorage.getItem("soilHistory") || "{}");
 
-    const topic = "esp32c3/led/blink";
-    const client = mqtt.connect("wss://mqtt.jjlabs.kr:9001");
+    const client = mqtt.connect("ws://mqtt.jjlabs.kr:9001", { clientId });
 
     client.on("connect", () => {
-      console.log("MQTT 연결 성공");
-      statusEl.textContent = "연결됨";
-
-      // ✅ 슬라이더 값 동기화를 위해 현재 토픽 구독
-      client.subscribe(topic);
+      statusEl.textContent = "✅ MQTT 연결됨";
+      client.subscribe("jjlabs/#");
+      setInterval(checkOfflineDevices, 30000);
     });
 
-    client.on("message", (receivedTopic, payload) => {
-      if (receivedTopic === topic) {
-        const currentValue = payload.toString();
-        slider.value = currentValue;
-        value.textContent = currentValue;
-        console.log("초기 MQTT 값 수신:", currentValue);
+    client.on("message", (topic, message) => {
+      try {
+        const parts = topic.split("/");
+        if (parts.length === 3 && parts[1].startsWith("SF-") && parts[2] === "soil") {
+          const id = parts[1];
+          const data = JSON.parse(message.toString());
+          if ("soil" in data) updateRow(id, data.soil);
+        }
+      } catch (e) {
+        console.error("메시지 오류:", e);
       }
     });
 
-    client.on("error", (err) => {
-      console.error("MQTT 연결 실패", err);
-      statusEl.textContent = "연결 실패";
-    });
+    function updateRow(id, soil) {
+      const now = new Date();
+      const nowStr = now.toLocaleTimeString();
+      lastUpdateTime[id] = now.getTime();
+      statusMap[id] = "online";
 
-    slider.oninput = () => {
-      const interval = slider.value;
-      value.textContent = interval;
-      client.publish(topic, interval, { retain: true }, (err) => {
-        if (err) {
-          console.error("MQTT 전송 실패:", err);
-          statusEl.textContent = "전송 실패";
-        } else {
-          console.log("MQTT 전송 성공:", interval);
-          statusEl.textContent = `전송됨: ${interval} ms`;
+      let row = document.getElementById(id);
+      if (!row) {
+        row = document.createElement("tr");
+        row.id = id;
+        row.innerHTML = `
+          <td>${id}</td>
+          <td class="soil">-</td>
+          <td class="chart-cell"><canvas id="chart-${id}"></canvas></td>
+          <td class="chart-cell"><canvas id="week-chart-${id}"></canvas></td>
+          <td class="status offline">❌</td>
+          <td class="last-time">-</td>
+        `;
+        deviceTable.appendChild(row);
+        initChart(id);
+      }
+
+      row.querySelector(".soil").textContent = soil.toFixed(1);
+      row.querySelector(".status").textContent = "✅";
+      row.querySelector(".status").className = "status online";
+      row.querySelector(".last-time").textContent = nowStr;
+
+      if (!historyData[id]) historyData[id] = [];
+      historyData[id].push({ t: now.getTime(), v: soil });
+      historyData[id] = historyData[id].filter(entry => now.getTime() - entry.t <= 7 * 24 * 60 * 60 * 1000);
+      localStorage.setItem("soilHistory", JSON.stringify(historyData));
+
+      updateChart(id);
+      updateWeekChart(id);
+      sortTable();
+    }
+
+    function updateChart(id) {
+      const chart = charts[id];
+      const now = Date.now();
+      const history = (historyData[id] || []).filter(e => now - e.t <= 24 * 60 * 60 * 1000);
+      chart.data.labels = history.map(e => new Date(e.t).getHours() + ":" + String(new Date(e.t).getMinutes()).padStart(2, "0"));
+      chart.data.datasets[0].data = history.map(e => e.v);
+      chart.update();
+    }
+
+    function updateWeekChart(id) {
+      const chart = weekCharts[id];
+      const history = historyData[id] || [];
+      chart.data.labels = history.map(e => {
+        const d = new Date(e.t);
+        return (d.getMonth() + 1) + "/" + d.getDate() + " " + d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+      });
+      chart.data.datasets[0].data = history.map(e => e.v);
+      chart.update();
+    }
+
+    function checkOfflineDevices() {
+      const now = Date.now();
+      for (const id in lastUpdateTime) {
+        if (now - lastUpdateTime[id] > 60000) {
+          statusMap[id] = "offline";
+          const row = document.getElementById(id);
+          if (row) {
+            row.querySelector(".status").textContent = "❌";
+            row.querySelector(".status").className = "status offline";
+          }
+        }
+      }
+      sortTable();
+    }
+
+    function sortTable() {
+      const rows = Array.from(deviceTable.querySelectorAll("tr"));
+      rows.sort((a, b) => {
+        const idA = a.id;
+        const idB = b.id;
+        const statusA = statusMap[idA] === "online" ? 0 : 1;
+        const statusB = statusMap[idB] === "online" ? 0 : 1;
+        if (statusA !== statusB) return statusA - statusB;
+        return idA.localeCompare(idB);
+      });
+      rows.forEach(row => deviceTable.appendChild(row));
+    }
+
+    function initChart(id) {
+      const ctx = document.getElementById("chart-" + id).getContext("2d");
+      charts[id] = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{
+            label: "24h",
+            data: [],
+            borderColor: "#3498db",
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.3
+          }]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              suggestedMin: 0,
+              suggestedMax: 100
+            },
+            x: {
+              ticks: { maxTicksLimit: 6 }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          }
         }
       });
-    };
+
+      const weekCtx = document.getElementById("week-chart-" + id).getContext("2d");
+      weekCharts[id] = new Chart(weekCtx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{
+            label: "7d",
+            data: [],
+            borderColor: "#e67e22",
+            borderWidth: 1,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.3
+          }]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              suggestedMin: 0,
+              suggestedMax: 100
+            },
+            x: {
+              ticks: { maxTicksLimit: 6 }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          }
+        }
+      });
+
+      if (historyData[id]) {
+        updateChart(id);
+        updateWeekChart(id);
+      }
+    }
+
+    function clearHistory() {
+      localStorage.removeItem("soilHistory");
+      location.reload();
+    }
   </script>
 </body>
 </html>
