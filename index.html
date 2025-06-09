@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>SF-XXXX 실시간 수분 뷰어</title>
+  <title>SF-XXXX 실시간 수분 뷰어 54분</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -46,7 +46,7 @@
     const statusMap = {};
     let historyData = JSON.parse(localStorage.getItem("soilHistory") || "{}");
 
-const client = mqtt.connect("wss://mqtt.jjlabs.kr:9001/mqtt", {
+const client = mqtt.connect("wss://mqtt.jjlabs.kr:9001", {
   clientId: "viewer_" + Math.random().toString(16).slice(2)
 });
 
