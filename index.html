@@ -46,7 +46,9 @@
     const statusMap = {};
     let historyData = JSON.parse(localStorage.getItem("soilHistory") || "{}");
 
-    const client = mqtt.connect("wss://mqtt.jjlabs.kr:9001/mqtt", { clientId });
+const client = mqtt.connect("wss://mqtt.jjlabs.kr:9001/mqtt", {
+  clientId: "viewer_" + Math.random().toString(16).slice(2)
+});
 
     client.on("connect", () => {
       statusEl.textContent = "✅ MQTT 연결됨";
